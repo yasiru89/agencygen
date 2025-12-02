@@ -485,8 +485,8 @@ async def solve(
     
     AgencyGen automatically:
     1. Analyzes your task
-    2. Chooses the best agent pattern (single, voting, debate, etc.)
-    3. Creates the agent
+    2. Chooses the best agent pattern (single, voting, debate, reflection, or composite)
+    3. Creates the agent (or multi-agent system for composite)
     4. Runs it on your task
     5. Returns the result
     
@@ -501,8 +501,10 @@ async def solve(
         Dict with:
         - 'result': The agent's response
         - 'agent': The agent that was created (for reuse)
-        - 'pattern': Which pattern was chosen
+        - 'pattern': Which pattern was chosen (single_agent, majority_voting,
+          reflection, debate, or composite)
         - 'reasoning': Why that pattern was chosen
+        - 'sub_patterns': (Only for composite) List of patterns combined
     
     Example:
         >>> # Fast keyword-based analysis (default)
@@ -513,6 +515,11 @@ async def solve(
         >>> # Smarter LLM-based analysis
         >>> result = await solve("Help me decide on a career", use_llm_analyzer=True)
         >>> print(result['pattern']) # LLM chooses best pattern
+        
+        >>> # Complex task triggers composite pattern
+        >>> result = await solve("Calculate the budget then write a professional report")
+        >>> print(result['pattern'])      # "composite"
+        >>> print(result['sub_patterns']) # ["majority_voting", "reflection"]
     """
     # Analyze the task to determine the best pattern
     if use_llm_analyzer:
@@ -601,6 +608,58 @@ async def solve(
         )
         agent = debate['judge']
         
+    elif pattern == "composite":
+        # Create sub-agents based on sub_patterns
+        sub_patterns = analysis.get('sub_patterns', ['single_agent', 'single_agent'])
+        sub_agents = []
+        
+        for i, sub_pattern in enumerate(sub_patterns):
+            if sub_pattern == "majority_voting":
+                # Create a voting agent (use first voter as representative)
+                voting = create_voting_agents(
+                    name=f"sub_voter_{i}",
+                    instruction="Answer accurately",
+                    num_voters=3,
+                )
+                sub_agents.append(voting['voters'][0])
+            elif sub_pattern == "reflection":
+                reflection = create_reflection_agent(
+                    name=f"sub_writer_{i}",
+                    task_instruction="Write high-quality content",
+                    model=model,
+                )
+                sub_agents.append(reflection['worker'])
+            elif sub_pattern == "debate":
+                debate = create_debate_agents(
+                    name=f"sub_analyst_{i}",
+                    topic_instruction="Analyze from multiple perspectives",
+                    num_debaters=2,
+                    model=model,
+                )
+                sub_agents.append(debate['judge'])
+            else:  # single_agent
+                sub_agents.append(create_single_agent(
+                    name=f"sub_helper_{i}",
+                    instruction="Help with the task",
+                    model=model,
+                ))
+        
+        # Create composite agent orchestrating all sub-agents
+        agent = create_composite_agent(
+            name="solver",
+            instruction=f"""You are a composite agent that orchestrates multiple specialized sub-agents.
+            
+Your task: {task}
+
+You have access to these specialized tools:
+- Each sub-agent handles a specific aspect of the task
+- Use them in the appropriate order to complete the full task
+- Combine their outputs into a coherent final answer""",
+            sub_agents=sub_agents,
+            model=model,
+        )
+        result = await run_agent(agent, task)
+        
     else:  # single_agent (default)
         agent = create_single_agent(
             name="solver",
@@ -614,42 +673,64 @@ async def solve(
         'agent': agent,
         'pattern': pattern,
         'reasoning': reasoning,
+        'sub_patterns': analysis.get('sub_patterns'),  # Include if composite
     }
 
 
-def _analyze_task_keywords(task: str) -> Dict[str, str]:
+def _analyze_task_keywords(task: str) -> Dict[str, Any]:
     """
     Analyze a task using keyword matching (fast, no API call).
     
     Returns pattern and reasoning based on keyword detection.
+    For composite patterns, also returns sub_patterns list.
     """
     task_lower = task.lower()
+    
+    # Track which patterns are relevant
+    detected_patterns = []
     
     # Check for reliability/accuracy needs -> voting
     reliability_keywords = ['calculate', 'math', 'compute', 'exact', 'precise',
                            'accurate', 'correct', 'factual', 'verify']
     if any(kw in task_lower for kw in reliability_keywords):
-        return {
-            'pattern': 'majority_voting',
-            'reasoning': 'Task requires accuracy - using voting for reliability'
-        }
+        detected_patterns.append(('majority_voting', 'accuracy/calculation'))
     
     # Check for quality/polish needs -> reflection
     quality_keywords = ['write', 'compose', 'draft', 'create', 'essay', 'email',
                        'letter', 'story', 'article', 'polish', 'professional']
     if any(kw in task_lower for kw in quality_keywords):
-        return {
-            'pattern': 'reflection',
-            'reasoning': 'Task requires quality output - using reflection for polish'
-        }
+        detected_patterns.append(('reflection', 'quality writing'))
     
     # Check for analysis/perspective needs -> debate
     debate_keywords = ['analyze', 'compare', 'pros and cons', 'debate', 'argue',
                       'perspective', 'opinion', 'ethics', 'should']
     if any(kw in task_lower for kw in debate_keywords):
+        detected_patterns.append(('debate', 'multiple perspectives'))
+    
+    # Check for multi-step/complex needs -> composite indicators
+    composite_keywords = ['then', 'and then', 'after that', 'first', 'second',
+                         'finally', 'steps', 'multi-step', 'pipeline']
+    has_composite_indicators = any(kw in task_lower for kw in composite_keywords)
+    
+    # If multiple patterns detected or composite indicators present with 2+ patterns
+    if len(detected_patterns) >= 2 or (has_composite_indicators and len(detected_patterns) >= 1):
+        # If we have composite indicators but only one pattern, add single_agent for the other steps
+        if len(detected_patterns) == 1:
+            detected_patterns.append(('single_agent', 'general task handling'))
+        
+        sub_patterns = [p[0] for p in detected_patterns]
+        reasons = [p[1] for p in detected_patterns]
         return {
-            'pattern': 'debate',
-            'reasoning': 'Task benefits from multiple perspectives - using debate'
+            'pattern': 'composite',
+            'reasoning': f'Complex task requiring: {", ".join(reasons)} - using composite pattern',
+            'sub_patterns': sub_patterns
+        }
+    
+    # Single pattern detected
+    if len(detected_patterns) == 1:
+        return {
+            'pattern': detected_patterns[0][0],
+            'reasoning': f'Task requires {detected_patterns[0][1]} - using {detected_patterns[0][0]}'
         }
     
     # Default to single agent
@@ -659,7 +740,7 @@ def _analyze_task_keywords(task: str) -> Dict[str, str]:
     }
 
 
-async def _analyze_task_llm(task: str, model: str = DEFAULT_MODEL) -> Dict[str, str]:
+async def _analyze_task_llm(task: str, model: str = DEFAULT_MODEL) -> Dict[str, Any]:
     """
     Analyze a task using an LLM (smarter, uses API call).
     
@@ -677,9 +758,15 @@ Available patterns:
 - majority_voting: For tasks requiring accuracy/reliability (math, facts)
 - reflection: For tasks requiring quality/polish (writing, creative)
 - debate: For tasks benefiting from multiple perspectives (analysis, ethics)
+- composite: For complex multi-step tasks requiring MULTIPLE patterns combined
+
+For composite, also specify which sub_patterns to combine (2-3 patterns from above).
 
 Respond with ONLY a JSON object (no markdown):
 {"pattern": "pattern_name", "reasoning": "one sentence why"}
+
+For composite patterns:
+{"pattern": "composite", "reasoning": "why", "sub_patterns": ["pattern1", "pattern2"]}
 
 Examples:
 Task: "What is 15% of 240?"
@@ -693,6 +780,12 @@ Task: "Should I buy or rent a house?"
 
 Task: "What is the capital of France?"
 {"pattern": "single_agent", "reasoning": "Simple factual question needs one focused answer"}
+
+Task: "Calculate the ROI and then write a professional report analyzing the investment"
+{"pattern": "composite", "reasoning": "Requires accurate calculation AND quality writing", "sub_patterns": ["majority_voting", "reflection"]}
+
+Task: "First analyze the pros and cons of remote work, then write a persuasive essay"
+{"pattern": "composite", "reasoning": "Needs debate for analysis AND reflection for quality writing", "sub_patterns": ["debate", "reflection"]}
 """
     )
     
@@ -712,10 +805,22 @@ Task: "What is the capital of France?"
         result = json.loads(response)
         
         # Validate the pattern
-        valid_patterns = ['single_agent', 'majority_voting', 'reflection', 'debate']
+        valid_patterns = ['single_agent', 'majority_voting', 'reflection', 'debate', 'composite']
         if result.get('pattern') not in valid_patterns:
             result['pattern'] = 'single_agent'
             result['reasoning'] = 'LLM returned invalid pattern - defaulting to single agent'
+        
+        # Validate sub_patterns for composite
+        if result.get('pattern') == 'composite':
+            sub_patterns = result.get('sub_patterns', [])
+            valid_sub = ['single_agent', 'majority_voting', 'reflection', 'debate']
+            sub_patterns = [p for p in sub_patterns if p in valid_sub]
+            if len(sub_patterns) < 2:
+                # Not enough valid sub-patterns, fall back to single agent
+                result['pattern'] = 'single_agent'
+                result['reasoning'] = 'Composite needs 2+ sub-patterns - defaulting to single agent'
+            else:
+                result['sub_patterns'] = sub_patterns
         
         return result
     except (json.JSONDecodeError, KeyError):
