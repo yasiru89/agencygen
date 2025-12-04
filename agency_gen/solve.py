@@ -16,6 +16,17 @@ from .patterns import (
     create_debate_agents,
 )
 from .runner import run_agent
+from .rlm import (
+    create_chunking_rlm,
+    create_iterative_rlm,
+    create_hierarchical_rlm,
+    RLMConfig,
+)
+from .rlm_runner import (
+    run_chunking_rlm,
+    run_iterative_rlm,
+    run_hierarchical_rlm,
+)
 
 
 async def solve(
@@ -122,6 +133,39 @@ async def solve(
             "judge",
         )
         agent = debate["judge"]
+
+    elif pattern == "rlm_chunking":
+        rlm_config = RLMConfig(model=model)
+        rlm = create_chunking_rlm(
+            name="solver",
+            instruction=f"Process and analyze this content:\n{task}",
+            config=rlm_config,
+        )
+        rlm_result = await run_chunking_rlm(rlm, task)
+        result = rlm_result["result"]
+        agent = rlm["worker"]
+
+    elif pattern == "rlm_iterative":
+        rlm_config = RLMConfig(model=model, max_iterations=5)
+        rlm = create_iterative_rlm(
+            name="solver",
+            instruction=task,
+            config=rlm_config,
+        )
+        rlm_result = await run_iterative_rlm(rlm, task)
+        result = rlm_result["result"]
+        agent = rlm["worker"]
+
+    elif pattern == "rlm_hierarchical":
+        rlm_config = RLMConfig(model=model, max_depth=3)
+        rlm = create_hierarchical_rlm(
+            name="solver",
+            instruction=task,
+            config=rlm_config,
+        )
+        rlm_result = await run_hierarchical_rlm(rlm, task)
+        result = rlm_result["result"]
+        agent = rlm["decomposer"]
 
     elif pattern == "composite":
         sub_patterns = analysis.get("sub_patterns", ["single_agent", "single_agent"])
