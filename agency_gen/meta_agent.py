@@ -8,6 +8,7 @@ from google.adk.agents import LlmAgent
 from google.adk.tools import FunctionTool
 
 from .config import DEFAULT_MODEL
+from .registry import register_agent
 
 from .patterns import (
     create_single_agent,
@@ -43,7 +44,8 @@ def _tool_create_single(
     description: str = "",
 ) -> str:
     safe_name = _sanitize_name(name)
-    create_single_agent(safe_name, instruction, description)
+    agent = create_single_agent(safe_name, instruction, description)
+    register_agent(safe_name, agent)
     return f"Created single agent '{safe_name}' with instruction: {instruction[:100]}..."
 
 
@@ -53,7 +55,8 @@ def _tool_create_voting(
     num_voters: int = 3,
 ) -> str:
     safe_name = _sanitize_name(name)
-    create_voting_agents(safe_name, instruction, num_voters)
+    voting_system = create_voting_agents(safe_name, instruction, num_voters)
+    register_agent(safe_name, voting_system)
     return f"Created voting system '{safe_name}' with {num_voters} voters"
 
 
@@ -63,7 +66,8 @@ def _tool_create_debate(
     num_debaters: int = 2,
 ) -> str:
     safe_name = _sanitize_name(name)
-    create_debate_agents(safe_name, topic, num_debaters)
+    debate_system = create_debate_agents(safe_name, topic, num_debaters)
+    register_agent(safe_name, debate_system)
     return f"Created debate '{safe_name}' with {num_debaters} debaters and a judge"
 
 
@@ -72,7 +76,8 @@ def _tool_create_reflection(
     task: str,
 ) -> str:
     safe_name = _sanitize_name(name)
-    create_reflection_agent(safe_name, task)
+    reflection_system = create_reflection_agent(safe_name, task)
+    register_agent(safe_name, reflection_system)
     return f"Created reflection system '{safe_name}' with worker and critic"
 
 
@@ -87,7 +92,8 @@ def _tool_create_pipeline(
     for step in steps:
         if "name" in step:
             step["name"] = _sanitize_name(step["name"])
-    create_sequential_agent(safe_name, steps)
+    pipeline = create_sequential_agent(safe_name, steps)
+    register_agent(safe_name, pipeline)
     return f"Created pipeline '{safe_name}' with {len(steps)} steps: {[s['name'] for s in steps]}"
 
 
@@ -99,7 +105,8 @@ def _tool_create_rlm_chunking(
     """Create a chunking RLM for processing long contexts."""
     safe_name = _sanitize_name(name)
     config = RLMConfig(chunk_size=chunk_size)
-    create_chunking_rlm(safe_name, instruction, config)
+    rlm = create_chunking_rlm(safe_name, instruction, config)
+    register_agent(safe_name, rlm)
     return f"Created chunking RLM '{safe_name}' with {chunk_size} char chunks"
 
 
@@ -115,7 +122,8 @@ def _tool_create_rlm_iterative(
         max_iterations=max_iterations,
         convergence_threshold=convergence_threshold,
     )
-    create_iterative_rlm(safe_name, instruction, config)
+    rlm = create_iterative_rlm(safe_name, instruction, config)
+    register_agent(safe_name, rlm)
     return f"Created iterative RLM '{safe_name}' with max {max_iterations} iterations"
 
 
@@ -127,7 +135,8 @@ def _tool_create_rlm_hierarchical(
     """Create a hierarchical RLM for recursive decomposition."""
     safe_name = _sanitize_name(name)
     config = RLMConfig(max_depth=max_depth)
-    create_hierarchical_rlm(safe_name, instruction, config)
+    rlm = create_hierarchical_rlm(safe_name, instruction, config)
+    register_agent(safe_name, rlm)
     return f"Created hierarchical RLM '{safe_name}' with max depth {max_depth}"
 
 

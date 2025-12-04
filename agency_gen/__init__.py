@@ -75,6 +75,16 @@ from .termination import (
     create_default_termination,
 )
 
+# Agent registry for storing created agents
+from .registry import (
+    register_agent,
+    get_agent,
+    get_all_agents,
+    remove_agent,
+    clear_registry,
+    list_agents,
+)
+
 __version__ = "0.1.0"
 __all__ = [
     # The simplest way
@@ -114,4 +124,11 @@ __all__ = [
     "ChunkTermination",
     "CompositeTermination",
     "create_default_termination",
+    # Agent registry
+    "register_agent",
+    "get_agent",
+    "get_all_agents",
+    "remove_agent",
+    "clear_registry",
+    "list_agents",
 ]
