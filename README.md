@@ -33,6 +33,7 @@ The project is inspired by research on **Multi-Agent System Design**:
 - 💬 [LLM Council](https://github.com/karpathy/llm-council) by Andrej Karpathy
 - 📚 [Kaggle 5-Day Agents Course](https://www.kaggle.com/learn-guide/5-day-agents)
 - 🔧 [Google ADK Documentation](https://google.github.io/adk-docs/)
+- 🔄 [Recursive Language Models](https://alexzhang13.github.io/blog/2025/rlm/)
 
 **Key Insight**: Different tasks need different agent structures:
 
@@ -43,6 +44,7 @@ The project is inspired by research on **Multi-Agent System Design**:
 | Complex Analysis | Debate | Multiple perspectives help |
 | Writing/Creative | Reflection | Self-critique = quality |
 | Multi-step | Sequential | Pipeline of specialists |
+| Long Context | RLM | Recursive decomposition |
 
 ## 📦 Installation
 
@@ -55,7 +57,7 @@ export GOOGLE_API_KEY=your_key_here  # Linux/Mac
 set GOOGLE_API_KEY=your_key_here     # Windows
 
 # Run the examples
-python example.py
+python examples/basic.py
 ```
 
 ## 🚀 Quick Start
@@ -168,6 +170,108 @@ pipeline = create_sequential_agent(
 # ADK's SequentialAgent passes output from step to step
 ```
 
+## 🔄 Recursive Language Models (RLM)
+
+AgencyGen includes implementations of [Recursive Language Models](https://alexzhang13.github.io/blog/2025/rlm/) for handling long contexts and complex reasoning.
+
+### Two RLM Approaches
+
+#### 1. Pattern-Based RLM (Rudimentary)
+
+Pre-defined strategies for recursive processing:
+
+```python
+from agency_gen import create_chunking_rlm, run_chunking_rlm
+
+# Process long documents by chunking
+rlm = create_chunking_rlm(
+    name="document_processor",
+    instruction="Extract key insights from this document"
+)
+
+result = await run_chunking_rlm(rlm, very_long_document)
+print(result['result'])
+```
+
+**Available patterns:**
+- **Chunking RLM**: Split long input → process chunks → compress → aggregate
+- **Iterative RLM**: Generate → critique → improve → repeat until convergence
+- **Hierarchical RLM**: Decompose problem → solve sub-problems → aggregate
+
+#### 2. True RLM with REPL (Recommended)
+
+The model has access to a Python REPL and can recursively call itself:
+
+```python
+from agency_gen import run_rlm_repl, RLMREPLConfig
+import asyncio
+
+# Long context (could be 10M+ tokens)
+context = open("server_logs.txt").read()
+
+# Query about the context
+result = asyncio.run(run_rlm_repl(
+    query="How many ERROR entries are there? What are the main categories?",
+    context=context,
+    config=RLMREPLConfig(max_iterations=15)
+))
+
+print(result['result'])
+print(f"Completed in {result['iterations']} iterations")
+```
+
+**How True RLM Works:**
+
+1. **Context as Variable**: The huge context is stored as `context` variable in a REPL
+2. **Model Writes Code**: The LLM writes Python to interact with the context
+3. **Recursive `llm()` Function**: Model can call `llm(query, context_slice)` to query itself
+4. **Runtime Decisions**: Model decides how to partition, search, and recurse
+
+**Example interaction:**
+
+```
+Query: "Count errors and categorize them"
+
+Model writes:
+```python
+# Peek at the context
+print(context[:500])
+```
+
+Execution output:
+[10:15:32] ERROR: Database timeout...
+[10:16:45] ERROR: SSL validation failed...
+
+Model writes:
+```python
+# Count and categorize
+errors = [line for line in context.split('\n') if 'ERROR' in line]
+print(f"Total errors: {len(errors)}")
+
+# Use llm() to categorize (recursive call)
+categories = llm("Categorize these errors", '\n'.join(errors[:10]))
+print(categories)
+```
+
+FINAL(5 errors: 2 database, 2 security, 1 memory)
+```
+
+### RLM with MCP (Isolated Execution)
+
+For security-sensitive contexts, use containerized code execution:
+
+```python
+from agency_gen import run_rlm_with_mcp
+
+# Code runs in isolated Docker/Podman container
+result = await run_rlm_with_mcp(
+    query="Analyze this untrusted data",
+    context=untrusted_content
+)
+```
+
+Requires: `pip install git+https://github.com/philschmid/code-sandbox-mcp.git`
+
 ## 🔌 Advanced: Compose & Connect Agents
 
 ### Compose Multiple Patterns
@@ -215,12 +319,20 @@ agencygen/
 │   ├── composite.py         # Composition helpers
 │   ├── a2a.py               # A2A helpers
 │   ├── meta_agent.py        # AgencyGen meta-agent definition
-│   └── agency_gen.py        # Thin aggregator for backwards compatibility
-├── example.py               # Full examples
-├── example_a2a.py           # A2A example
-├── tests/                   # Test suite
-├── requirements.txt         # Dependencies
-└── README.md                # This file
+│   ├── agency_gen.py        # Thin aggregator for backwards compatibility
+│   └── rlm/                  # Recursive Language Model module
+│       ├── __init__.py      # RLM exports
+│       ├── patterns.py      # RLM pattern definitions (chunking, iterative, hierarchical)
+│       ├── runner.py        # RLM execution runners
+│       ├── termination.py   # Termination strategies
+│       └── repl.py          # True RLM with REPL environment
+├── examples/                 # Example scripts
+│   ├── basic.py             # Basic patterns demo
+│   ├── a2a.py               # A2A example
+│   └── rlm_repl.py          # RLM with REPL demo
+├── tests/                    # Test suite
+├── requirements.txt          # Dependencies
+└── README.md                 # This file
 ```
 
 ## 🔧 How It Works
@@ -233,6 +345,7 @@ AgencyGen is built entirely on [Google ADK](https://google.github.io/adk-docs/):
 - **AgentTool**: Wraps an agent as a tool for another agent (composition!)
 - **FunctionTool**: Wraps Python functions as agent tools
 - **Runner**: Executes agents and handles the conversation
+- **McpToolset**: Integrates MCP servers for tool access (used in RLM)
 
 ### The `solve()` Function
 
@@ -258,6 +371,26 @@ AgencyGen = LlmAgent(
     ]
 )
 ```
+
+### The RLM Module
+
+The `agency_gen.rlm` module provides:
+
+**Pattern-based (rudimentary):**
+- `create_chunking_rlm()` / `run_chunking_rlm()` - Process long texts via chunking
+- `create_iterative_rlm()` / `run_iterative_rlm()` - Self-refine until convergence
+- `create_hierarchical_rlm()` / `run_hierarchical_rlm()` - Recursive decomposition
+
+**True RLM with REPL:**
+- `run_rlm_repl()` - Main entry point for REPL-based RLM
+- `run_rlm_with_mcp()` - Isolated execution via Code Sandbox MCP
+- `RLMREPL` class - Full control over the RLM loop
+
+**Termination strategies:**
+- `DepthTermination` - Stop at max recursion depth
+- `ConvergenceTermination` - Stop when output stabilizes
+- `QualityTermination` - Stop when critic approves
+- `CompositeTermination` - Combine multiple strategies
 
 ## 🎓 For Beginners
 
@@ -286,10 +419,21 @@ Patterns are recipes for how agents work together:
 4. **Reflection**: Agent critiques itself → quality
 5. **Sequential**: Pipeline of agents → workflows
 
+### What's an RLM?
+
+A **Recursive Language Model** is an inference strategy where:
+- The model can recursively call itself or other LLMs
+- It processes unbounded context by decomposition
+- The model has access to a REPL to execute code
+- It decides at runtime how to analyze the context
+
+This enables processing of essentially unlimited context without "context rot".
+
 ## 📚 Learn More
 
 - [Google ADK Documentation](https://google.github.io/adk-docs/)
 - [ADK GitHub - adk-python](https://github.com/google/adk-python)
 - [Kaggle 5-Day Agents Course](https://www.kaggle.com/learn-guide/5-day-agents)
 - [Multi-Agent Design Paper](https://arxiv.org/html/2502.02533v1)
-
+- [Recursive Language Models Blog](https://alexzhang13.github.io/blog/2025/rlm/)
+- [Code Sandbox MCP](https://www.philschmid.de/code-sandbox-mcp)

@@ -8,14 +8,13 @@ Provides async functions to execute the different RLM types:
 """
 
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
-from google.adk.agents import LlmAgent
 from google.adk.sessions import InMemorySessionService
 
-from .runner import run_agent
+from ..runner import run_agent
 from .termination import RLMState, TerminationStrategy
-from .rlm import RLMConfig, create_chunking_rlm, create_iterative_rlm, create_hierarchical_rlm
+from .patterns import RLMConfig
 
 
 async def run_chunking_rlm(
@@ -448,4 +447,3 @@ async def run_recursive_agent(
         raise ValueError(f"Unknown RLM type: {rlm_type}")
     
     return await runners[rlm_type](rlm, input_text, app_name, user_id)
-

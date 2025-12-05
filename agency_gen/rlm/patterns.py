@@ -1,29 +1,30 @@
 """
-Recursive Language Model (RLM) primitives for AgencyGen.
+Recursive Language Model (RLM) pattern definitions for AgencyGen.
 
-Implements RLM patterns as described in research on recursive self-improvement:
+Implements pre-defined RLM patterns as described in research on recursive self-improvement:
 - Chunking RLM: Process long contexts by chunking and compressing
 - Iterative RLM: Self-refine until convergence
 - Hierarchical RLM: Decompose complex problems recursively
 
+Note: These are "rudimentary" RLM patterns that use pre-defined strategies.
+For the true RLM with REPL environment, see the repl.py module.
+
 Based on: https://alexzhang13.github.io/blog/2025/rlm/
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional, Callable, Any, Dict
+from dataclasses import dataclass
+from typing import List, Optional, Any, Dict
 
-from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
+from google.adk.agents import LlmAgent, LoopAgent
 
-from .config import DEFAULT_MODEL
+from ..config import DEFAULT_MODEL
 from .termination import (
     RLMState,
     TerminationStrategy,
     DepthTermination,
     ConvergenceTermination,
     QualityTermination,
-    ChunkTermination,
     CompositeTermination,
-    create_default_termination,
 )
 
 
@@ -156,7 +157,7 @@ def create_chunking_rlm(
         - aggregator: Agent that combines all results
         - config: The configuration used
         - chunk_fn: Function to chunk text
-        - process_fn: Async function to process full input
+        - type: "chunking"
     """
     config = config or RLMConfig()
     model = config.model
@@ -234,6 +235,7 @@ def create_iterative_rlm(
         - loop: LoopAgent combining worker and critic
         - config: The configuration used
         - termination: Termination strategy
+        - type: "iterative"
     """
     config = config or RLMConfig()
     model = config.model
@@ -319,6 +321,7 @@ def create_hierarchical_rlm(
         - aggregator: Agent that combines solutions
         - config: The configuration used
         - termination: Termination strategy
+        - type: "hierarchical"
     """
     config = config or RLMConfig()
     model = config.model
@@ -427,4 +430,3 @@ def create_recursive_agent(
         )
     
     return factories[rlm_type](name, instruction, config)
-

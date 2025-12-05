@@ -253,4 +253,3 @@ def create_default_termination(
         ],
         mode="or",
     )
-

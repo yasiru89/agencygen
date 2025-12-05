@@ -13,6 +13,10 @@ ADK Documentation: https://google.github.io/adk-docs/
 
 import asyncio
 import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load API key from .env file
 if os.path.exists(".env"):
