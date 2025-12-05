@@ -53,6 +53,18 @@ class RLMConfig:
     # Custom termination
     termination_strategy: Optional[TerminationStrategy] = None
 
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.chunk_size <= 0:
+            raise ValueError(f"chunk_size must be positive, got {self.chunk_size}")
+        if self.chunk_overlap < 0:
+            raise ValueError(f"chunk_overlap must be non-negative, got {self.chunk_overlap}")
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError(
+                f"chunk_overlap ({self.chunk_overlap}) must be less than "
+                f"chunk_size ({self.chunk_size}) to ensure forward progress"
+            )
+
     def get_termination_strategy(self) -> TerminationStrategy:
         """Get the configured termination strategy."""
         if self.termination_strategy:
@@ -90,6 +102,9 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     if len(text) <= chunk_size:
         return [text]
     
+    # Ensure overlap is less than chunk_size to guarantee forward progress
+    overlap = min(overlap, chunk_size - 1)
+    
     chunks = []
     start = 0
     
@@ -99,10 +114,11 @@ def _chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
         chunks.append(chunk)
         
         # Move start, accounting for overlap
+        # Step is always at least 1 since overlap < chunk_size
         start = end - overlap
         
-        # Prevent infinite loop on very small overlap
-        if start >= len(text) - overlap:
+        # Break if we've captured the rest of the text
+        if end >= len(text):
             break
     
     return chunks

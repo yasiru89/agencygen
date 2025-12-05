@@ -21,11 +21,13 @@ from .rlm import (
     create_iterative_rlm,
     create_hierarchical_rlm,
     RLMConfig,
-)
-from .rlm_runner import (
     run_chunking_rlm,
     run_iterative_rlm,
     run_hierarchical_rlm,
+    RLMREPLConfig,
+    run_rlm_with_mcp,
+    create_rlm_wrapper_agent,
+    create_rlm_repl_wrapper_agent,
 )
 
 
@@ -167,6 +169,33 @@ async def solve(
         result = rlm_result["result"]
         agent = rlm["decomposer"]
 
+    elif pattern == "rlm_repl":
+        # True RLM with REPL environment - model can write code and call llm() recursively
+        # Uses MCP-based sandboxed execution for security
+        # Separate the query from the context if provided
+        # Convention: task can be "query\n---\ncontext" or just the query with context inline
+        if "\n---\n" in task:
+            query, context = task.split("\n---\n", 1)
+        else:
+            # Treat entire task as both query and context
+            query = task
+            context = task
+        
+        repl_config = RLMREPLConfig(model=model)
+        rlm_result = await run_rlm_with_mcp(
+            query=query,
+            context=context,
+            config=repl_config,
+            name="solver_repl",
+        )
+        result = rlm_result["result"]
+        # REPL-based RLM doesn't have a persistent agent, use a placeholder
+        agent = create_single_agent(
+            name="solver_repl_info",
+            instruction="This was solved using RLM with MCP-sandboxed REPL",
+            model=model,
+        )
+
     elif pattern == "composite":
         sub_patterns = analysis.get("sub_patterns", ["single_agent", "single_agent"])
         sub_agents = []
@@ -201,7 +230,14 @@ async def solve(
                     instruction="Process and analyze content in chunks",
                     config=rlm_config,
                 )
-                sub_agents.append(rlm["worker"])
+                wrapper = create_rlm_wrapper_agent(
+                    name=f"sub_chunker_{i}_wrapper",
+                    rlm=rlm,
+                    runner=run_chunking_rlm,
+                    description="Process long content by chunking, compressing, and aggregating",
+                    model=model,
+                )
+                sub_agents.append(wrapper)
             elif sub_pattern == "rlm_iterative":
                 rlm_config = RLMConfig(model=model, max_iterations=5)
                 rlm = create_iterative_rlm(
@@ -209,7 +245,14 @@ async def solve(
                     instruction="Iteratively refine and improve the output",
                     config=rlm_config,
                 )
-                sub_agents.append(rlm["worker"])
+                wrapper = create_rlm_wrapper_agent(
+                    name=f"sub_refiner_{i}_wrapper",
+                    rlm=rlm,
+                    runner=run_iterative_rlm,
+                    description="Iteratively refine output through critique and improvement cycles",
+                    model=model,
+                )
+                sub_agents.append(wrapper)
             elif sub_pattern == "rlm_hierarchical":
                 rlm_config = RLMConfig(model=model, max_depth=3)
                 rlm = create_hierarchical_rlm(
@@ -217,7 +260,23 @@ async def solve(
                     instruction="Decompose and solve complex problems hierarchically",
                     config=rlm_config,
                 )
-                sub_agents.append(rlm["decomposer"])
+                wrapper = create_rlm_wrapper_agent(
+                    name=f"sub_decomposer_{i}_wrapper",
+                    rlm=rlm,
+                    runner=run_hierarchical_rlm,
+                    description="Recursively decompose complex problems and aggregate solutions",
+                    model=model,
+                )
+                sub_agents.append(wrapper)
+            elif sub_pattern == "rlm_repl":
+                repl_config = RLMREPLConfig(model=model)
+                wrapper = create_rlm_repl_wrapper_agent(
+                    name=f"sub_repl_{i}_wrapper",
+                    config=repl_config,
+                    description="Analyze content programmatically with Python code and recursive LLM calls",
+                    model=model,
+                )
+                sub_agents.append(wrapper)
             else:
                 sub_agents.append(
                     create_single_agent(

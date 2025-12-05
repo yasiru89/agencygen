@@ -48,9 +48,23 @@ def _analyze_task_keywords(task: str, allow_composite: bool = True) -> Dict[str,
         "hierarchical",
         "recursive analysis",
     ]
+    rlm_repl_keywords = [
+        "analyze with code",
+        "programmatic",
+        "compute on context",
+        "search the text",
+        "extract patterns",
+        "parse and analyze",
+        "count occurrences",
+        "find all",
+        "regex",
+        "programmatically",
+    ]
 
     # Detect RLM patterns
-    if any(kw in task_lower for kw in rlm_chunking_keywords) or len(task) > 8000:
+    if any(kw in task_lower for kw in rlm_repl_keywords):
+        detected_patterns.append(("rlm_repl", "programmatic context analysis with REPL"))
+    elif any(kw in task_lower for kw in rlm_chunking_keywords) or len(task) > 8000:
         detected_patterns.append(("rlm_chunking", "long context processing"))
     elif any(kw in task_lower for kw in rlm_iterative_keywords):
         detected_patterns.append(("rlm_iterative", "iterative self-refinement"))
@@ -169,9 +183,11 @@ Available patterns:
 - rlm_chunking: For very long inputs that need to be processed in chunks
 - rlm_iterative: For tasks requiring iterative self-refinement until convergence
 - rlm_hierarchical: For complex problems that should be recursively decomposed
+- rlm_repl: For tasks requiring programmatic analysis (counting, searching, regex, code-based exploration)
 
 For composite, also specify which sub_patterns to combine (2-3 patterns from above).
-For RLM patterns, use them when the task explicitly needs recursion or long-context handling."""
+For RLM patterns, use them when the task explicitly needs recursion or long-context handling.
+Use rlm_repl when the task requires programmatic operations like counting, searching, or pattern matching."""
     if not allow_composite:
         analyzer_instruction += """
 IMPORTANT: Composite patterns are DISABLED for this run. Choose the single best pattern.
@@ -227,6 +243,7 @@ Task: "First analyze the pros and cons of remote work, then write a persuasive e
             "rlm_chunking",
             "rlm_iterative",
             "rlm_hierarchical",
+            "rlm_repl",
         ]
         if result.get("pattern") not in valid_patterns:
             result["pattern"] = "single_agent"
@@ -242,6 +259,7 @@ Task: "First analyze the pros and cons of remote work, then write a persuasive e
                 "rlm_chunking",
                 "rlm_iterative",
                 "rlm_hierarchical",
+                "rlm_repl",
             ]
             sub_patterns = [p for p in sub_patterns if p in valid_sub]
             if len(sub_patterns) < 2:
