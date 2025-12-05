@@ -12,6 +12,7 @@ Two analysis modes:
 
 import asyncio
 import os
+import pytest
 
 # Load API key
 with open(".env", "r") as f:
@@ -27,6 +28,8 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agency_gen import solve
+
+pytestmark = pytest.mark.asyncio
 
 
 async def test_keyword_analysis():

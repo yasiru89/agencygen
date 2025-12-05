@@ -20,6 +20,43 @@ def _analyze_task_keywords(task: str, allow_composite: bool = True) -> Dict[str,
 
     detected_patterns: List[Any] = []
 
+    # RLM detection - check first as it may override other patterns
+    rlm_chunking_keywords = [
+        "long document",
+        "large text",
+        "entire book",
+        "full transcript",
+        "complete file",
+        "process all",
+        "summarize the entire",
+    ]
+    rlm_iterative_keywords = [
+        "refine until",
+        "iterate",
+        "improve repeatedly",
+        "perfect",
+        "polish until",
+        "recursive",
+        "self-improve",
+    ]
+    rlm_hierarchical_keywords = [
+        "break down",
+        "decompose",
+        "step by step",
+        "sub-problems",
+        "divide and conquer",
+        "hierarchical",
+        "recursive analysis",
+    ]
+
+    # Detect RLM patterns
+    if any(kw in task_lower for kw in rlm_chunking_keywords) or len(task) > 8000:
+        detected_patterns.append(("rlm_chunking", "long context processing"))
+    elif any(kw in task_lower for kw in rlm_iterative_keywords):
+        detected_patterns.append(("rlm_iterative", "iterative self-refinement"))
+    elif any(kw in task_lower for kw in rlm_hierarchical_keywords):
+        detected_patterns.append(("rlm_hierarchical", "hierarchical decomposition"))
+
     reliability_keywords = [
         "calculate",
         "math",
@@ -129,8 +166,12 @@ Available patterns:
 - reflection: For tasks requiring quality/polish (writing, creative)
 - debate: For tasks benefiting from multiple perspectives (analysis, ethics)
 - composite: For complex multi-step tasks requiring MULTIPLE patterns combined
+- rlm_chunking: For very long inputs that need to be processed in chunks
+- rlm_iterative: For tasks requiring iterative self-refinement until convergence
+- rlm_hierarchical: For complex problems that should be recursively decomposed
 
-For composite, also specify which sub_patterns to combine (2-3 patterns from above)."""
+For composite, also specify which sub_patterns to combine (2-3 patterns from above).
+For RLM patterns, use them when the task explicitly needs recursion or long-context handling."""
     if not allow_composite:
         analyzer_instruction += """
 IMPORTANT: Composite patterns are DISABLED for this run. Choose the single best pattern.
@@ -183,6 +224,9 @@ Task: "First analyze the pros and cons of remote work, then write a persuasive e
             "reflection",
             "debate",
             "composite",
+            "rlm_chunking",
+            "rlm_iterative",
+            "rlm_hierarchical",
         ]
         if result.get("pattern") not in valid_patterns:
             result["pattern"] = "single_agent"
@@ -195,6 +239,9 @@ Task: "First analyze the pros and cons of remote work, then write a persuasive e
                 "majority_voting",
                 "reflection",
                 "debate",
+                "rlm_chunking",
+                "rlm_iterative",
+                "rlm_hierarchical",
             ]
             sub_patterns = [p for p in sub_patterns if p in valid_sub]
             if len(sub_patterns) < 2:

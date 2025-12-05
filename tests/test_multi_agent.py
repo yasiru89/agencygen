@@ -10,6 +10,7 @@ Great for reliability on math/factual questions!
 
 import asyncio
 import os
+import pytest
 
 # Load API key from env file
 with open(".env", "r") as f:
@@ -34,6 +35,8 @@ from agency_gen import create_voting_agents, create_debate_agents
 # Constants
 APP_NAME = "multi_agent_test"
 USER_ID = "test_user"
+
+pytestmark = pytest.mark.asyncio
 
 
 async def run_agent(agent, query: str, session_id: str, session_service) -> str:

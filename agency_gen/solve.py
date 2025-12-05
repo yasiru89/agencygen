@@ -16,6 +16,17 @@ from .patterns import (
     create_debate_agents,
 )
 from .runner import run_agent
+from .rlm import (
+    create_chunking_rlm,
+    create_iterative_rlm,
+    create_hierarchical_rlm,
+    RLMConfig,
+)
+from .rlm_runner import (
+    run_chunking_rlm,
+    run_iterative_rlm,
+    run_hierarchical_rlm,
+)
 
 
 async def solve(
@@ -123,6 +134,39 @@ async def solve(
         )
         agent = debate["judge"]
 
+    elif pattern == "rlm_chunking":
+        rlm_config = RLMConfig(model=model)
+        rlm = create_chunking_rlm(
+            name="solver",
+            instruction=f"Process and analyze this content:\n{task}",
+            config=rlm_config,
+        )
+        rlm_result = await run_chunking_rlm(rlm, task)
+        result = rlm_result["result"]
+        agent = rlm["worker"]
+
+    elif pattern == "rlm_iterative":
+        rlm_config = RLMConfig(model=model, max_iterations=5)
+        rlm = create_iterative_rlm(
+            name="solver",
+            instruction=task,
+            config=rlm_config,
+        )
+        rlm_result = await run_iterative_rlm(rlm, task)
+        result = rlm_result["result"]
+        agent = rlm["worker"]
+
+    elif pattern == "rlm_hierarchical":
+        rlm_config = RLMConfig(model=model, max_depth=3)
+        rlm = create_hierarchical_rlm(
+            name="solver",
+            instruction=task,
+            config=rlm_config,
+        )
+        rlm_result = await run_hierarchical_rlm(rlm, task)
+        result = rlm_result["result"]
+        agent = rlm["decomposer"]
+
     elif pattern == "composite":
         sub_patterns = analysis.get("sub_patterns", ["single_agent", "single_agent"])
         sub_agents = []
@@ -150,6 +194,30 @@ async def solve(
                     model=model,
                 )
                 sub_agents.append(debate["judge"])
+            elif sub_pattern == "rlm_chunking":
+                rlm_config = RLMConfig(model=model)
+                rlm = create_chunking_rlm(
+                    name=f"sub_chunker_{i}",
+                    instruction="Process and analyze content in chunks",
+                    config=rlm_config,
+                )
+                sub_agents.append(rlm["worker"])
+            elif sub_pattern == "rlm_iterative":
+                rlm_config = RLMConfig(model=model, max_iterations=5)
+                rlm = create_iterative_rlm(
+                    name=f"sub_refiner_{i}",
+                    instruction="Iteratively refine and improve the output",
+                    config=rlm_config,
+                )
+                sub_agents.append(rlm["worker"])
+            elif sub_pattern == "rlm_hierarchical":
+                rlm_config = RLMConfig(model=model, max_depth=3)
+                rlm = create_hierarchical_rlm(
+                    name=f"sub_decomposer_{i}",
+                    instruction="Decompose and solve complex problems hierarchically",
+                    config=rlm_config,
+                )
+                sub_agents.append(rlm["decomposer"])
             else:
                 sub_agents.append(
                     create_single_agent(
