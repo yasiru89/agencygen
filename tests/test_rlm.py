@@ -13,7 +13,7 @@ Tests cover:
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from agency_gen.termination import (
+from agency_gen.rlm.termination import (
     RLMState,
     DepthTermination,
     ConvergenceTermination,
@@ -23,7 +23,7 @@ from agency_gen.termination import (
     create_default_termination,
 )
 
-from agency_gen.rlm import (
+from agency_gen.rlm.patterns import (
     RLMConfig,
     _chunk_text,
     create_compression_agent,

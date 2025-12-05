@@ -7,8 +7,8 @@ services using the A2A protocol, allowing other agents to communicate
 with them across systems.
 
 To run this example:
-    1. Start the server: python example_a2a.py server
-    2. In another terminal: python example_a2a.py client
+    1. Start the server: python a2a.py server
+    2. In another terminal: python a2a.py client
 
 Requirements:
     pip install google-adk uvicorn
@@ -16,6 +16,9 @@ Requirements:
 
 import sys
 import os
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load API key
 if os.path.exists(".env"):
@@ -128,8 +131,8 @@ def main():
     if len(sys.argv) < 2:
         print("""
 Usage:
-    python example_a2a.py server    # Start the A2A server
-    python example_a2a.py client    # Connect as a client
+    python a2a.py server    # Start the A2A server
+    python a2a.py client    # Connect as a client
 
 The A2A protocol allows agents to communicate over networks,
 enabling multi-agent systems across different machines/services.
@@ -152,4 +155,3 @@ enabling multi-agent systems across different machines/services.
 
 if __name__ == "__main__":
     main()
-

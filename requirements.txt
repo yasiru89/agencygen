@@ -8,7 +8,20 @@ google-adk>=1.0.0
 
 # Note: google-adk includes google-genai as a dependency
 
+# MCP (Model Context Protocol) support for RLM REPL
+# Documentation: https://google.github.io/adk-docs/tools-custom/mcp-tools/
+mcp>=1.0.0
+fastmcp>=0.1.0
+
+# Code Sandbox MCP for isolated Python execution in RLM
+# Documentation: https://www.philschmid.de/code-sandbox-mcp
+# Install separately: pip install git+https://github.com/philschmid/code-sandbox-mcp.git
+
 # To run:
 # 1. pip install -r requirements.txt
 # 2. export GOOGLE_API_KEY=your_key_here
 # 3. python example.py
+#
+# For RLM with MCP (optional):
+# 4. pip install git+https://github.com/philschmid/code-sandbox-mcp.git
+# 5. Ensure Docker or Podman is running

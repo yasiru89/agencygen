@@ -48,23 +48,20 @@ from .agency_gen import (
     DEFAULT_COUNCIL_MODELS,
 )
 
-# RLM: Recursive Language Model patterns
+# RLM: Recursive Language Model patterns (from subpackage)
 from .rlm import (
+    # Pattern-based RLM (rudimentary)
     RLMConfig,
     create_chunking_rlm,
     create_iterative_rlm,
     create_hierarchical_rlm,
     create_recursive_agent,
-)
-
-from .rlm_runner import (
+    create_compression_agent,
     run_chunking_rlm,
     run_iterative_rlm,
     run_hierarchical_rlm,
     run_recursive_agent,
-)
-
-from .termination import (
+    # Termination strategies
     RLMState,
     TerminationStrategy,
     DepthTermination,
@@ -73,6 +70,13 @@ from .termination import (
     ChunkTermination,
     CompositeTermination,
     create_default_termination,
+    # True RLM with REPL environment
+    RLMREPLConfig,
+    RLMREPL,
+    RLMWithMCP,
+    REPLEnvironment,
+    run_rlm_repl,
+    run_rlm_with_mcp,
 )
 
 # Agent registry for storing created agents
@@ -105,12 +109,13 @@ __all__ = [
     "DEFAULT_MODEL",
     "AVAILABLE_MODELS",
     "DEFAULT_COUNCIL_MODELS",
-    # RLM primitives
+    # RLM pattern-based (rudimentary)
     "RLMConfig",
     "create_chunking_rlm",
     "create_iterative_rlm",
     "create_hierarchical_rlm",
     "create_recursive_agent",
+    "create_compression_agent",
     "run_chunking_rlm",
     "run_iterative_rlm",
     "run_hierarchical_rlm",
@@ -124,6 +129,13 @@ __all__ = [
     "ChunkTermination",
     "CompositeTermination",
     "create_default_termination",
+    # True RLM with REPL
+    "RLMREPLConfig",
+    "RLMREPL",
+    "RLMWithMCP",
+    "REPLEnvironment",
+    "run_rlm_repl",
+    "run_rlm_with_mcp",
     # Agent registry
     "register_agent",
     "get_agent",
