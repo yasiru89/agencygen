@@ -11,6 +11,7 @@ Using a mix of models can produce more robust results!
 
 import asyncio
 import os
+import pytest
 
 # Load API key from env file
 with open(".env", "r") as f:
@@ -39,6 +40,8 @@ from agency_gen import (
 # Constants
 APP_NAME = "diverse_voting_test"
 USER_ID = "test_user"
+
+pytestmark = pytest.mark.asyncio
 
 
 async def run_agent(agent, query: str, session_id: str, session_service) -> str:

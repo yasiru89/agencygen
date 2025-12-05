@@ -4,6 +4,7 @@ Test solve() with composite patterns.
 import asyncio
 import os
 import sys
+import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -54,6 +55,7 @@ def test_keyword_detection():
     print("\n✅ All keyword detection tests passed!")
 
 
+@pytest.mark.asyncio
 async def test_composite_solve():
     """Test solve() with a composite task."""
     print("\n🚀 Testing solve() with composite pattern...")
@@ -74,10 +76,25 @@ async def test_composite_solve():
     print("\n✅ Composite solve test passed!")
 
 
+@pytest.mark.asyncio
+async def test_solve_without_composite():
+    """Ensure solve() can disable composite selection."""
+    print("\n🚫 Testing solve() with composite disabled...")
+    
+    task = "Calculate the ROI and then write a professional report"
+    result = await solve(task, use_composite_patterns=False)
+    
+    print(f"  Pattern: {result['pattern']}")
+    print(f"  Reasoning: {result['reasoning']}")
+    assert result['pattern'] != 'composite', "Composite should be disabled"
+    print("  ✅ Composite disabled and single pattern selected")
+
+
 if __name__ == "__main__":
     # Run keyword detection tests (no API needed)
     test_keyword_detection()
     
     # Run full solve test (requires API)
     asyncio.run(test_composite_solve())
+    asyncio.run(test_solve_without_composite())
 

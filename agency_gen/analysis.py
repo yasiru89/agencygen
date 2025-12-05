@@ -239,6 +239,9 @@ Task: "First analyze the pros and cons of remote work, then write a persuasive e
                 "majority_voting",
                 "reflection",
                 "debate",
+                "rlm_chunking",
+                "rlm_iterative",
+                "rlm_hierarchical",
             ]
             sub_patterns = [p for p in sub_patterns if p in valid_sub]
             if len(sub_patterns) < 2:

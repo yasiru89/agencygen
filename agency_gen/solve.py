@@ -194,6 +194,30 @@ async def solve(
                     model=model,
                 )
                 sub_agents.append(debate["judge"])
+            elif sub_pattern == "rlm_chunking":
+                rlm_config = RLMConfig(model=model)
+                rlm = create_chunking_rlm(
+                    name=f"sub_chunker_{i}",
+                    instruction="Process and analyze content in chunks",
+                    config=rlm_config,
+                )
+                sub_agents.append(rlm["worker"])
+            elif sub_pattern == "rlm_iterative":
+                rlm_config = RLMConfig(model=model, max_iterations=5)
+                rlm = create_iterative_rlm(
+                    name=f"sub_refiner_{i}",
+                    instruction="Iteratively refine and improve the output",
+                    config=rlm_config,
+                )
+                sub_agents.append(rlm["worker"])
+            elif sub_pattern == "rlm_hierarchical":
+                rlm_config = RLMConfig(model=model, max_depth=3)
+                rlm = create_hierarchical_rlm(
+                    name=f"sub_decomposer_{i}",
+                    instruction="Decompose and solve complex problems hierarchically",
+                    config=rlm_config,
+                )
+                sub_agents.append(rlm["decomposer"])
             else:
                 sub_agents.append(
                     create_single_agent(

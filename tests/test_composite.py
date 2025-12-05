@@ -10,6 +10,7 @@ using ADK's AgentTool. A composite agent can orchestrate:
 
 import asyncio
 import os
+import pytest
 
 # Load API key
 with open(".env", "r") as f:
@@ -37,6 +38,8 @@ from agency_gen import (
 
 APP_NAME = "composite_test"
 USER_ID = "test_user"
+
+pytestmark = pytest.mark.asyncio
 
 
 async def run_agent(agent, query: str, session_id: str, session_service) -> str:
