@@ -1,0 +1,129 @@
+"""
+Meta-agent definition and tool wrappers for AgencyGen.
+"""
+
+import re
+
+from google.adk.agents import LlmAgent
+from google.adk.tools import FunctionTool
+
+from .config import DEFAULT_MODEL
+
+from .patterns import (
+    create_single_agent,
+    create_voting_agents,
+    create_debate_agents,
+    create_reflection_agent,
+    create_sequential_agent,
+)
+
+
+def _sanitize_name(name: str) -> str:
+    """
+    Sanitize a name to be a valid Python identifier.
+    ADK requires agent names to be valid identifiers.
+    """
+    name = re.sub(r"[\s\-]+", "_", name)
+    name = re.sub(r"[^a-zA-Z0-9_]", "", name)
+    if name and name[0].isdigit():
+        name = "_" + name
+    return name.lower() or "agent"
+
+
+def _tool_create_single(
+    name: str,
+    instruction: str,
+    description: str = "",
+) -> str:
+    safe_name = _sanitize_name(name)
+    create_single_agent(safe_name, instruction, description)
+    return f"Created single agent '{safe_name}' with instruction: {instruction[:100]}..."
+
+
+def _tool_create_voting(
+    name: str,
+    instruction: str,
+    num_voters: int = 3,
+) -> str:
+    safe_name = _sanitize_name(name)
+    create_voting_agents(safe_name, instruction, num_voters)
+    return f"Created voting system '{safe_name}' with {num_voters} voters"
+
+
+def _tool_create_debate(
+    name: str,
+    topic: str,
+    num_debaters: int = 2,
+) -> str:
+    safe_name = _sanitize_name(name)
+    create_debate_agents(safe_name, topic, num_debaters)
+    return f"Created debate '{safe_name}' with {num_debaters} debaters and a judge"
+
+
+def _tool_create_reflection(
+    name: str,
+    task: str,
+) -> str:
+    safe_name = _sanitize_name(name)
+    create_reflection_agent(safe_name, task)
+    return f"Created reflection system '{safe_name}' with worker and critic"
+
+
+def _tool_create_pipeline(
+    name: str,
+    steps_json: str,
+) -> str:
+    import json
+
+    safe_name = _sanitize_name(name)
+    steps = json.loads(steps_json)
+    for step in steps:
+        if "name" in step:
+            step["name"] = _sanitize_name(step["name"])
+    create_sequential_agent(safe_name, steps)
+    return f"Created pipeline '{safe_name}' with {len(steps)} steps: {[s['name'] for s in steps]}"
+
+
+AgencyGen = LlmAgent(
+    name="AgencyGen",
+    model=DEFAULT_MODEL,
+    description="A meta-agent that creates task-specific agents and multi-agent systems",
+    instruction="""You are AgencyGen, a meta-agent specialized in designing AI agents.
+
+Your job: Analyze tasks and create the optimal agent or multi-agent system.
+
+## Your Tools
+
+1. **create_single** - Simple, focused agent for straightforward tasks
+2. **create_voting** - Multiple agents vote for reliability (math, facts)
+3. **create_debate** - Agents argue, judge decides (complex analysis)
+4. **create_reflection** - Self-critique for high-quality output (writing)
+5. **create_pipeline** - Sequential steps for workflows
+
+## Decision Guide
+
+| Task Type | Best Tool | Why |
+|-----------|-----------|-----|
+| Simple Q&A | create_single | One agent is enough |
+| Math/Facts | create_voting | Multiple votes = reliability |
+| Analysis/Ethics | create_debate | Multiple perspectives help |
+| Writing/Creative | create_reflection | Self-improvement = quality |
+| Multi-step | create_pipeline | Clear stages |
+
+## How to Respond
+
+1. Analyze what the user needs
+2. Choose the best tool for the job
+3. Call the tool with appropriate parameters
+4. Explain your choice so users learn!
+
+Always be helpful and explain your reasoning.""",
+    tools=[
+        FunctionTool(func=_tool_create_single),
+        FunctionTool(func=_tool_create_voting),
+        FunctionTool(func=_tool_create_debate),
+        FunctionTool(func=_tool_create_reflection),
+        FunctionTool(func=_tool_create_pipeline),
+    ],
+)
+

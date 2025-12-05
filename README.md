@@ -204,14 +204,23 @@ coordinator = create_composite_with_remote(
 ## 📁 Project Structure
 
 ```
-agentgen/
+agencygen/
 ├── agency_gen/
-│   ├── __init__.py       # Package exports
-│   └── agency_gen.py     # All the agent-building code
-├── example.py            # Full examples
-├── test_solve.py         # Test the solve() function
-├── requirements.txt      # Just google-adk
-└── README.md            # This file
+│   ├── __init__.py          # Package exports
+│   ├── config.py            # Shared constants (models, defaults)
+│   ├── patterns.py          # Agent creation patterns
+│   ├── analysis.py          # Task analysis helpers
+│   ├── runner.py            # run_agent helper
+│   ├── solve.py             # solve() orchestration
+│   ├── composite.py         # Composition helpers
+│   ├── a2a.py               # A2A helpers
+│   ├── meta_agent.py        # AgencyGen meta-agent definition
+│   └── agency_gen.py        # Thin aggregator for backwards compatibility
+├── example.py               # Full examples
+├── example_a2a.py           # A2A example
+├── tests/                   # Test suite
+├── requirements.txt         # Dependencies
+└── README.md                # This file
 ```
 
 ## 🔧 How It Works
