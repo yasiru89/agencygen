@@ -16,6 +16,7 @@ Two approaches are available:
    - Write code to manipulate and analyze context
    - Call llm() recursively on context slices
    - Decide at runtime how to partition and recurse
+   - Uses MCP-based sandboxed execution for security
 
 Usage:
     # Pattern-based (rudimentary)
@@ -24,10 +25,10 @@ Usage:
     rlm = create_chunking_rlm("analyzer", "Extract key points")
     result = await run_chunking_rlm(rlm, long_text)
     
-    # REPL-based (true RLM)
-    from agency_gen.rlm import run_rlm_repl
+    # REPL-based (true RLM) - requires MCP and Docker/Podman
+    from agency_gen.rlm import run_rlm_with_mcp
     
-    result = await run_rlm_repl(
+    result = await run_rlm_with_mcp(
         query="How many errors are mentioned?",
         context=long_log_file
     )
@@ -61,14 +62,17 @@ from .termination import (
     create_default_termination,
 )
 
-# True RLM with REPL environment
+# True RLM with REPL environment (MCP-based sandboxed execution only)
 from .repl import (
     RLMREPLConfig,
-    RLMREPL,
     RLMWithMCP,
-    REPLEnvironment,
-    run_rlm_repl,
     run_rlm_with_mcp,
+)
+
+# Wrapper agents for composite patterns
+from .wrappers import (
+    create_rlm_wrapper_agent,
+    create_rlm_repl_wrapper_agent,
 )
 
 __all__ = [
@@ -92,11 +96,11 @@ __all__ = [
     "ChunkTermination",
     "CompositeTermination",
     "create_default_termination",
-    # True RLM with REPL
+    # True RLM with REPL (MCP-based sandboxed execution)
     "RLMREPLConfig",
-    "RLMREPL",
     "RLMWithMCP",
-    "REPLEnvironment",
-    "run_rlm_repl",
     "run_rlm_with_mcp",
+    # Wrapper agents for composites
+    "create_rlm_wrapper_agent",
+    "create_rlm_repl_wrapper_agent",
 ]

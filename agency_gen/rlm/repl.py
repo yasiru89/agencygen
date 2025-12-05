@@ -14,12 +14,15 @@ Uses:
 - Google ADK (Agent Development Kit) for the agent framework
 - Code Sandbox MCP for safe Python code execution
 - MCP (Model Context Protocol) for tool integration
+
+SECURITY NOTE:
+This module ONLY supports MCP-based sandboxed code execution.
+Direct exec/eval-based REPL has been removed due to arbitrary code execution risks.
 """
 
 import re
-import asyncio
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any, Callable
+from typing import Optional, List, Dict, Any
 
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
@@ -155,379 +158,53 @@ def _extract_code_blocks(text: str) -> List[str]:
     return [m.strip() for m in matches if m.strip()]
 
 
-def _extract_final_answer(text: str) -> Optional[tuple]:
-    """Extract FINAL(...) or FINAL_VAR(...) from the response."""
-    # Check for FINAL(...)
-    final_match = re.search(r'FINAL\((.*?)\)', text, re.DOTALL)
-    if final_match:
-        return ("value", final_match.group(1).strip())
+def _extract_balanced_parens(text: str, start_pos: int) -> Optional[str]:
+    """Extract content inside balanced parentheses starting at '(' position.
     
-    # Check for FINAL_VAR(...)
+    Args:
+        text: The full text to search
+        start_pos: Position of the opening '('
+        
+    Returns:
+        The content inside the balanced parentheses, or None if unbalanced.
+    """
+    if start_pos >= len(text) or text[start_pos] != '(':
+        return None
+    
+    depth = 0
+    for i in range(start_pos, len(text)):
+        if text[i] == '(':
+            depth += 1
+        elif text[i] == ')':
+            depth -= 1
+            if depth == 0:
+                # Found the matching closing paren
+                return text[start_pos + 1:i]
+    
+    return None  # Unbalanced parentheses
+
+
+def _extract_final_answer(text: str) -> Optional[tuple]:
+    """Extract FINAL(...) or FINAL_VAR(...) from the response.
+    
+    Handles nested parentheses correctly by finding balanced parens.
+    For example, FINAL(len(items) is 5) extracts "len(items) is 5".
+    """
+    # Check for FINAL_VAR(...) first (simpler pattern, no nesting expected)
     var_match = re.search(r'FINAL_VAR\(([a-zA-Z_][a-zA-Z0-9_]*)\)', text)
     if var_match:
         return ("var", var_match.group(1).strip())
     
+    # Check for FINAL(...) with balanced parentheses
+    final_prefix = re.search(r'FINAL\(', text)
+    if final_prefix:
+        # Find the position of the opening paren
+        paren_pos = final_prefix.end() - 1
+        content = _extract_balanced_parens(text, paren_pos)
+        if content is not None:
+            return ("value", content.strip())
+    
     return None
-
-
-class REPLEnvironment:
-    """
-    A Python REPL environment for the RLM.
-    
-    This manages the execution context where:
-    - The context is stored as a variable
-    - An llm() function is available for recursive calls
-    - Code can be executed and outputs captured
-    """
-    
-    def __init__(
-        self,
-        context: str,
-        llm_fn: Callable[[str, str], str],
-        config: RLMREPLConfig,
-    ):
-        self.context = context
-        self.llm_fn = llm_fn
-        self.config = config
-        self.current_depth = 0
-        
-        # Build the execution namespace
-        self._namespace: Dict[str, Any] = {
-            config.context_var_name: context,
-            "llm": self._wrapped_llm,
-            "print": self._capture_print,
-            "__builtins__": __builtins__,
-            # Pre-import useful modules
-            "re": __import__("re"),
-            "json": __import__("json"),
-            "math": __import__("math"),
-        }
-        
-        # Capture print outputs
-        self._print_buffer: List[str] = []
-        
-    def _capture_print(self, *args, **kwargs):
-        """Capture print statements."""
-        output = " ".join(str(a) for a in args)
-        self._print_buffer.append(output)
-        
-    def _wrapped_llm(self, query: str, context: str = "") -> str:
-        """Wrapped LLM function that enforces depth limits."""
-        if self.current_depth >= self.config.max_recursive_depth:
-            return f"[ERROR: Max recursive depth ({self.config.max_recursive_depth}) reached]"
-        
-        self.current_depth += 1
-        try:
-            result = self.llm_fn(query, context)
-            return result
-        finally:
-            self.current_depth -= 1
-    
-    def execute(self, code: str) -> Dict[str, Any]:
-        """
-        Execute Python code in the REPL environment.
-        
-        Returns:
-            Dict with 'output' (captured prints/result) and 'error' (if any)
-        """
-        self._print_buffer = []
-        
-        try:
-            # Try to evaluate as expression first
-            try:
-                result = eval(code, self._namespace)
-                if result is not None:
-                    self._print_buffer.append(repr(result))
-            except SyntaxError:
-                # If not an expression, execute as statements
-                exec(code, self._namespace)
-            
-            output = "\n".join(self._print_buffer)
-            
-            # Truncate if too long
-            if len(output) > self.config.max_output_chars:
-                output = output[:self.config.max_output_chars] + "\n... [truncated]"
-            
-            return {"output": output, "error": None}
-            
-        except Exception as e:
-            return {"output": "\n".join(self._print_buffer), "error": f"{type(e).__name__}: {str(e)}"}
-    
-    def get_variable(self, var_name: str) -> Any:
-        """Get a variable from the namespace."""
-        return self._namespace.get(var_name)
-
-
-class RLMREPL:
-    """
-    The main Recursive Language Model with REPL environment.
-    
-    This implements the true RLM concept where:
-    1. The model receives a query (not the full context)
-    2. The context is stored as a variable in a REPL
-    3. The model writes code to interact with the context
-    4. The model can call llm() to recursively query itself
-    5. The loop continues until FINAL(answer) is output
-    """
-    
-    def __init__(
-        self,
-        config: Optional[RLMREPLConfig] = None,
-        name: str = "rlm_repl",
-    ):
-        self.config = config or RLMREPLConfig()
-        self.name = name
-        
-        # Create the underlying LLM agent
-        self.agent = LlmAgent(
-            model=self.config.model,
-            name=f"{name}_agent",
-            instruction="You are a helpful assistant.",
-            description="RLM agent with REPL access",
-        )
-    
-    async def _call_llm(self, query: str, context: str = "") -> str:
-        """Make a single LLM call (used for recursive calls within REPL)."""
-        session_service = InMemorySessionService()
-        session_id = f"recursive_{id(query)}"
-        
-        await session_service.create_session(
-            app_name=self.name,
-            user_id="rlm_user",
-            session_id=session_id,
-        )
-        
-        runner = Runner(
-            agent=self.agent,
-            app_name=self.name,
-            session_service=session_service,
-        )
-        
-        # Build the prompt
-        if context:
-            prompt = f"Context:\n{context}\n\nQuestion: {query}"
-        else:
-            prompt = query
-        
-        response_parts = []
-        async for event in runner.run_async(
-            user_id="rlm_user",
-            session_id=session_id,
-            new_message=types.Content(
-                role="user",
-                parts=[types.Part(text=prompt)],
-            ),
-        ):
-            if hasattr(event, "content") and event.content:
-                for part in event.content.parts:
-                    if hasattr(part, "text") and part.text:
-                        response_parts.append(part.text)
-        
-        return "".join(response_parts)
-    
-    def _call_llm_sync(self, query: str, context: str = "") -> str:
-        """Synchronous wrapper for LLM calls (used in REPL)."""
-        # Get or create event loop
-        try:
-            loop = asyncio.get_running_loop()
-            # If we're in an async context, we need to run in a new thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, self._call_llm(query, context))
-                return future.result(timeout=60)
-        except RuntimeError:
-            # No running loop, we can use asyncio.run directly
-            return asyncio.run(self._call_llm(query, context))
-    
-    async def run(
-        self,
-        query: str,
-        context: str,
-    ) -> Dict[str, Any]:
-        """
-        Run the RLM on a query with the given context.
-        
-        This is the main entry point that implements the RLM loop:
-        1. Build system prompt with context info
-        2. Send query to model
-        3. Extract and execute code blocks
-        4. Feed results back to model
-        5. Repeat until FINAL(...) is output
-        
-        Args:
-            query: The question to answer about the context
-            context: The (potentially huge) context to analyze
-            
-        Returns:
-            Dict with:
-            - result: The final answer
-            - iterations: Number of iterations taken
-            - history: List of (model_output, execution_result) tuples
-        """
-        # Create the REPL environment
-        repl = REPLEnvironment(
-            context=context,
-            llm_fn=self._call_llm_sync,
-            config=self.config,
-        )
-        
-        # Build the system prompt
-        system_prompt = RLM_SYSTEM_PROMPT.format(
-            context_var=self.config.context_var_name,
-            context_len=len(context),
-        )
-        
-        # Session for the main agent loop
-        session_service = InMemorySessionService()
-        session_id = f"rlm_main_{id(query)}"
-        
-        await session_service.create_session(
-            app_name=self.name,
-            user_id="rlm_user",
-            session_id=session_id,
-        )
-        
-        # Create a new agent with the RLM system prompt
-        rlm_agent = LlmAgent(
-            model=self.config.model,
-            name=f"{self.name}_main",
-            instruction=system_prompt,
-            description="RLM agent with REPL environment",
-        )
-        
-        runner = Runner(
-            agent=rlm_agent,
-            app_name=self.name,
-            session_service=session_service,
-        )
-        
-        # History of interactions
-        history: List[Dict[str, Any]] = []
-        
-        # Current conversation for the agent
-        messages = [query]
-        
-        for iteration in range(self.config.max_iterations):
-            # Get model response
-            current_message = messages[-1] if iteration > 0 else query
-            
-            response_parts = []
-            async for event in runner.run_async(
-                user_id="rlm_user",
-                session_id=session_id,
-                new_message=types.Content(
-                    role="user",
-                    parts=[types.Part(text=current_message)],
-                ),
-            ):
-                if hasattr(event, "content") and event.content:
-                    for part in event.content.parts:
-                        if hasattr(part, "text") and part.text:
-                            response_parts.append(part.text)
-            
-            model_output = "".join(response_parts)
-            
-            # Check for final answer
-            final = _extract_final_answer(model_output)
-            if final:
-                final_type, final_value = final
-                
-                if final_type == "var":
-                    # Get the variable value from REPL
-                    result = repl.get_variable(final_value)
-                    if result is None:
-                        result = f"[Variable '{final_value}' not found]"
-                    else:
-                        result = str(result)
-                else:
-                    result = final_value
-                
-                history.append({
-                    "iteration": iteration,
-                    "model_output": model_output,
-                    "final_answer": result,
-                })
-                
-                return {
-                    "result": result,
-                    "iterations": iteration + 1,
-                    "history": history,
-                }
-            
-            # Extract and execute code blocks
-            code_blocks = _extract_code_blocks(model_output)
-            
-            if not code_blocks:
-                # No code blocks - prompt the model to write code or give final answer
-                execution_output = "No code blocks found. Please write Python code in ```python ... ``` blocks to analyze the context, or output FINAL(answer) with your answer."
-            else:
-                # Execute all code blocks
-                outputs = []
-                for code in code_blocks:
-                    result = repl.execute(code)
-                    if result["error"]:
-                        outputs.append(f"Code:\n{code}\n\nError: {result['error']}")
-                        if result["output"]:
-                            outputs.append(f"Output before error:\n{result['output']}")
-                    else:
-                        outputs.append(f"Code:\n{code}\n\nOutput:\n{result['output']}")
-                
-                execution_output = "\n\n---\n\n".join(outputs)
-            
-            history.append({
-                "iteration": iteration,
-                "model_output": model_output,
-                "code_blocks": code_blocks,
-                "execution_output": execution_output,
-            })
-            
-            # Feed execution results back to model
-            messages.append(f"Execution results:\n\n{execution_output}\n\nContinue analyzing or output FINAL(answer) when you have the answer.")
-        
-        # Max iterations reached
-        return {
-            "result": "[Max iterations reached without final answer]",
-            "iterations": self.config.max_iterations,
-            "history": history,
-        }
-
-
-async def run_rlm_repl(
-    query: str,
-    context: str,
-    config: Optional[RLMREPLConfig] = None,
-    name: str = "rlm_repl",
-) -> Dict[str, Any]:
-    """
-    Convenience function to run an RLM query with REPL.
-    
-    This is the main entry point for using the true RLM pattern where
-    the model has access to a REPL environment with the context as a
-    variable and can recursively call itself.
-    
-    Args:
-        query: The question to answer about the context
-        context: The (potentially large) context to analyze
-        config: Optional RLM configuration
-        name: Name for the RLM instance
-        
-    Returns:
-        Dict with result, iterations, and history
-        
-    Example:
-        ```python
-        import asyncio
-        from agency_gen.rlm import run_rlm_repl
-        
-        context = open("large_document.txt").read()
-        query = "How many times is 'error' mentioned?"
-        
-        result = asyncio.run(run_rlm_repl(query, context))
-        print(result["result"])
-        ```
-    """
-    rlm = RLMREPL(config=config, name=name)
-    return await rlm.run(query, context)
 
 
 # =============================================================================
@@ -538,7 +215,7 @@ class RLMWithMCP:
     """
     RLM implementation using Code Sandbox MCP for isolated code execution.
     
-    This provides a more secure execution environment by using containerized
+    This provides a secure execution environment by using containerized
     code execution via the Code Sandbox MCP server.
     
     Note: Requires code-sandbox-mcp to be installed and Docker/Podman available.
@@ -591,12 +268,17 @@ class RLMWithMCP:
         Run the RLM using MCP-based code execution.
         
         This version uses the Code Sandbox MCP for isolated Python execution,
-        making it safer for untrusted contexts or when security is a concern.
+        making it safe for untrusted contexts.
+        
+        Raises:
+            RuntimeError: If MCP tools are not available.
         """
         if not self._mcp_available:
-            # Fall back to local REPL
-            rlm = RLMREPL(config=self.config, name=self.name)
-            return await rlm.run(query, context)
+            raise RuntimeError(
+                "RLM REPL requires MCP-based sandboxed execution for security. "
+                "Install with: pip install 'git+https://github.com/philschmid/code-sandbox-mcp.git' mcp\n"
+                "You also need Docker or Podman available for containerized execution."
+            )
         
         # Build the system prompt with context info
         system_prompt = RLM_SYSTEM_PROMPT.format(
@@ -623,32 +305,33 @@ The full context is provided to you separately - use the context slices in your 
         # Create the agent with MCP tools
         mcp_toolset = self._create_mcp_toolset()
         
-        rlm_agent = LlmAgent(
-            model=self.config.model,
-            name=f"{self.name}_mcp",
-            instruction=system_prompt,
-            description="RLM agent with MCP code execution",
-            tools=[mcp_toolset],
-        )
-        
-        session_service = InMemorySessionService()
-        session_id = f"rlm_mcp_{id(query)}"
-        
-        await session_service.create_session(
-            app_name=self.name,
-            user_id="rlm_user",
-            session_id=session_id,
-        )
-        
-        runner = Runner(
-            agent=rlm_agent,
-            app_name=self.name,
-            session_service=session_service,
-        )
-        
-        # Provide the context in chunks via the prompt
-        # (Since we can't directly inject into MCP's sandbox)
-        context_info = f"""
+        try:
+            rlm_agent = LlmAgent(
+                model=self.config.model,
+                name=f"{self.name}_mcp",
+                instruction=system_prompt,
+                description="RLM agent with MCP code execution",
+                tools=[mcp_toolset],
+            )
+            
+            session_service = InMemorySessionService()
+            session_id = f"rlm_mcp_{id(query)}"
+            
+            await session_service.create_session(
+                app_name=self.name,
+                user_id="rlm_user",
+                session_id=session_id,
+            )
+            
+            runner = Runner(
+                agent=rlm_agent,
+                app_name=self.name,
+                session_service=session_service,
+            )
+            
+            # Provide the context in chunks via the prompt
+            # (Since we can't directly inject into MCP's sandbox)
+            context_info = f"""
 Context length: {len(context)} characters
 First 2000 characters of context:
 ---
@@ -657,49 +340,49 @@ First 2000 characters of context:
 
 To access more of the context, ask me to provide specific ranges (e.g., "show me characters 2000-4000").
 """
-        
-        full_prompt = f"{context_info}\n\nQuery: {query}"
-        
-        history: List[Dict[str, Any]] = []
-        
-        response_parts = []
-        async for event in runner.run_async(
-            user_id="rlm_user",
-            session_id=session_id,
-            new_message=types.Content(
-                role="user",
-                parts=[types.Part(text=full_prompt)],
-            ),
-        ):
-            if hasattr(event, "content") and event.content:
-                for part in event.content.parts:
-                    if hasattr(part, "text") and part.text:
-                        response_parts.append(part.text)
-        
-        result = "".join(response_parts)
-        
-        # Check for final answer
-        final = _extract_final_answer(result)
-        if final:
-            final_type, final_value = final
-            result = final_value
-        
-        history.append({
-            "iteration": 0,
-            "model_output": result,
-        })
-        
-        # Close MCP connection
-        try:
-            await mcp_toolset.close()
-        except Exception:
-            pass
-        
-        return {
-            "result": result,
-            "iterations": 1,
-            "history": history,
-        }
+            
+            full_prompt = f"{context_info}\n\nQuery: {query}"
+            
+            history: List[Dict[str, Any]] = []
+            
+            response_parts = []
+            async for event in runner.run_async(
+                user_id="rlm_user",
+                session_id=session_id,
+                new_message=types.Content(
+                    role="user",
+                    parts=[types.Part(text=full_prompt)],
+                ),
+            ):
+                if hasattr(event, "content") and event.content:
+                    for part in event.content.parts:
+                        if hasattr(part, "text") and part.text:
+                            response_parts.append(part.text)
+            
+            result = "".join(response_parts)
+            
+            # Check for final answer
+            final = _extract_final_answer(result)
+            if final:
+                final_type, final_value = final
+                result = final_value
+            
+            history.append({
+                "iteration": 0,
+                "model_output": result,
+            })
+            
+            return {
+                "result": result,
+                "iterations": 1,
+                "history": history,
+            }
+        finally:
+            # Close MCP connection - ensure cleanup even if an exception occurs
+            try:
+                await mcp_toolset.close()
+            except Exception:
+                pass
 
 
 async def run_rlm_with_mcp(
@@ -712,7 +395,7 @@ async def run_rlm_with_mcp(
     Run an RLM query using MCP-based isolated code execution.
     
     This version uses Code Sandbox MCP for containerized Python execution,
-    providing better isolation and security.
+    providing isolation and security for LLM-generated code.
     
     Args:
         query: The question to answer about the context
@@ -722,6 +405,21 @@ async def run_rlm_with_mcp(
         
     Returns:
         Dict with result, iterations, and history
+        
+    Raises:
+        RuntimeError: If MCP tools are not available.
+        
+    Example:
+        ```python
+        import asyncio
+        from agency_gen.rlm import run_rlm_with_mcp
+        
+        context = open("large_document.txt").read()
+        query = "How many times is 'error' mentioned?"
+        
+        result = asyncio.run(run_rlm_with_mcp(query, context))
+        print(result["result"])
+        ```
     """
     rlm = RLMWithMCP(config=config, name=name)
     return await rlm.run(query, context)

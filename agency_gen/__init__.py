@@ -70,12 +70,9 @@ from .rlm import (
     ChunkTermination,
     CompositeTermination,
     create_default_termination,
-    # True RLM with REPL environment
+    # True RLM with REPL environment (MCP-based sandboxed execution)
     RLMREPLConfig,
-    RLMREPL,
     RLMWithMCP,
-    REPLEnvironment,
-    run_rlm_repl,
     run_rlm_with_mcp,
 )
 
@@ -129,12 +126,9 @@ __all__ = [
     "ChunkTermination",
     "CompositeTermination",
     "create_default_termination",
-    # True RLM with REPL
+    # True RLM with REPL (MCP-based sandboxed execution)
     "RLMREPLConfig",
-    "RLMREPL",
     "RLMWithMCP",
-    "REPLEnvironment",
-    "run_rlm_repl",
     "run_rlm_with_mcp",
     # Agent registry
     "register_agent",

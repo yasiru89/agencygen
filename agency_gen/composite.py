@@ -10,15 +10,23 @@ from google.adk.tools import AgentTool
 from .config import DEFAULT_MODEL
 
 
-def create_agent_tool(agent: LlmAgent, skip_summarization: bool = False) -> AgentTool:
+def create_agent_tool(
+    agent: LlmAgent,
+    description: Optional[str] = None,
+    skip_summarization: bool = False,
+) -> AgentTool:
     """
     Wrap an agent as a tool that another agent can use.
     
     Args:
         agent: The agent to wrap as a tool
+        description: Optional description for the tool
         skip_summarization: If True, skip summarizing the agent's response
     """
-    return AgentTool(agent=agent, skip_summarization=skip_summarization)
+    kwargs = {"agent": agent, "skip_summarization": skip_summarization}
+    if description is not None:
+        kwargs["description"] = description
+    return AgentTool(**kwargs)
 
 
 def create_composite_agent(
